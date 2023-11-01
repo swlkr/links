@@ -440,6 +440,8 @@ dependencies = [
  "mime_guess",
  "rizz",
  "rust-embed",
+ "serde",
+ "serde_json",
  "tokio",
 ]
 

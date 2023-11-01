@@ -1,12 +1,13 @@
 use axum::{
-    async_trait,
+    async_trait, debug_handler,
     extract::FromRequestParts,
     http::{request::Parts, StatusCode},
     response::IntoResponse,
     routing::get,
-    Router, Server,
+    Json, Router, Server,
 };
 use maud::{html, Markup, DOCTYPE};
+use serde::{Deserialize, Serialize};
 
 #[tokio::main]
 async fn main() {
@@ -17,14 +18,22 @@ async fn main() {
         .unwrap();
 }
 
+#[derive(Clone)]
 enum Route {
     Home,
     File,
 }
 
+impl std::fmt::Display for Route {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let x: &str = self.to_owned().into();
+        f.write_str(x)
+    }
+}
+
 impl From<Route> for &'static str {
     fn from(value: Route) -> Self {
-        match value {
+        match &value {
             Route::Home => "/",
             Route::File => "/pub/*file",
         }
@@ -32,13 +41,46 @@ impl From<Route> for &'static str {
 }
 
 fn routes() -> Router {
-    let handlers = Router::new().route(Route::Home.into(), get(home));
+    let handlers = Router::new().route(Route::Home.into(), get(home).post(add_link));
     let assets = Router::new().route(Route::File.into(), get(files));
 
     Router::new()
         .nest("", handlers)
         .nest("", assets)
         .fallback(not_found)
+}
+
+async fn home(cx: Context) -> Html {
+    let links: Vec<Link> = vec![
+        Link {
+            url: "test.com".into(),
+        },
+        Link {
+            url: "test2.com".into(),
+        },
+    ];
+    cx.render(html! {
+        form class="flex flex-col w-full gap-3" action=(Route::Home) method="post" {
+            (text_input("url"))
+            (button("Add link"))
+        }
+        (link_list(&links))
+    })
+}
+
+fn link_list(links: &Vec<Link>) -> Markup {
+    html! {
+        div class="w-full flex flex-col gap-4"  {
+            @for link in links {
+                (link_row(link))
+            }
+        }
+    }
+}
+
+#[debug_handler]
+async fn add_link(_cx: Context, Json(_link): Json<Link>) -> Res<impl IntoResponse> {
+    Ok(axum::response::Redirect::to(Route::Home.into()))
 }
 
 async fn not_found() -> impl IntoResponse {
@@ -108,9 +150,14 @@ impl Context {
                     meta name="viewport" content="width=device-width, initial-scale=1";
                     meta charset="UTF-8";
                     link rel="stylesheet" href="./pub/tailwind.css";
+                    script src="./pub/htmx.org@1.9.5.js" {}
+                    script src="./pub/json-enc.js" {}
                 }
-                body class="bg-white dark:bg-gray-950 dark:text-white" {
-                    (markup)
+                body class="bg-white dark:bg-gray-950 dark:text-white" hx-boost="true" hx-ext="json-enc" {
+                    div class="max-w-lg mx-auto w-full lg:px-0 px-3 h-screen flex flex-col gap-3" {
+                        h1 class="text-2xl lg:text-4xl text-center" { "links" }
+                        (markup)
+                    }
                 }
             }
         })
@@ -132,32 +179,8 @@ impl IntoResponse for Error {
 impl<S> FromRequestParts<S> for Context {
     type Rejection = Error;
 
-    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+    async fn from_request_parts(_parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         Ok(Context {})
-    }
-}
-
-async fn home(cx: Context) -> Html {
-    let links: Vec<Link> = vec![];
-    cx.render(html! {
-        div class="max-w-lg mx-auto w-full lg:px-0 px-3 h-screen flex flex-col gap-3" {
-            h1 class="text-2xl lg:text-4xl text-center" { "links" }
-            div class="flex flex-col w-full gap-3" {
-                (text_input("url"))
-                (button("Add link"))
-                div class="w-full flex flex-col gap-4" {
-                    @for link in &links {
-                        (link_row(link))
-                    }
-                }
-            }
-        }
-    })
-}
-
-fn spacer() -> Markup {
-    html! {
-        div class="flex flex-1" {}
     }
 }
 
@@ -175,7 +198,7 @@ fn button(name: &str) -> Markup {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 struct Link {
     url: String,
 }
