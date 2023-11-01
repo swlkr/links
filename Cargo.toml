@@ -1,0 +1,10 @@
+[package]
+name = "links"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+axum = { version = "0.6.20", features = ["headers", "macros"] }
+maud = { version = "0.25.0", features = ["axum"] }
+tokio = { version = "1.33.0", features = ["rt-multi-thread", "macros"] }
+rizz = { path = "../rizz" }
