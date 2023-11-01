@@ -8,3 +8,5 @@ axum = { version = "0.6.20", features = ["headers", "macros"] }
 maud = { version = "0.25.0", features = ["axum"] }
 tokio = { version = "1.33.0", features = ["rt-multi-thread", "macros"] }
 rizz = { path = "../rizz" }
+rust-embed = { version = "8.0.0", features = ["axum"] }
+mime_guess = "2.0.4"

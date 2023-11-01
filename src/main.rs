@@ -19,18 +19,72 @@ async fn main() {
 
 enum Route {
     Home,
+    File,
 }
 
 impl From<Route> for &'static str {
     fn from(value: Route) -> Self {
         match value {
             Route::Home => "/",
+            Route::File => "/pub/*file",
         }
     }
 }
 
 fn routes() -> Router {
-    Router::new().route(Route::Home.into(), get(home))
+    let handlers = Router::new().route(Route::Home.into(), get(home));
+    let assets = Router::new().route(Route::File.into(), get(files));
+
+    Router::new()
+        .nest("", handlers)
+        .nest("", assets)
+        .fallback(not_found)
+}
+
+async fn not_found() -> impl IntoResponse {
+    Error::NotFound
+}
+
+async fn files(uri: axum::http::Uri) -> impl IntoResponse {
+    let mut path = uri.path().trim_start_matches('/').to_string();
+    if path.starts_with("pub/") {
+        path = path.replace("pub/", "");
+    }
+    StaticFile(path)
+}
+
+#[derive(rust_embed::RustEmbed)]
+#[folder = "pub"]
+pub struct Files;
+
+pub struct StaticFile<T>(pub T);
+
+impl<T> StaticFile<T>
+where
+    T: Into<String>,
+{
+    fn maybe_response(self) -> Res<axum::response::Response> {
+        let path = self.0.into();
+        let asset = Files::get(path.as_str()).ok_or(Error::NotFound)?;
+        let body = axum::body::boxed(axum::body::Full::from(asset.data));
+        let mime = mime_guess::from_path(path).first_or_octet_stream();
+        let response = axum::response::Response::builder()
+            .header(axum::http::header::CONTENT_TYPE, mime.as_ref())
+            .header(axum::http::header::CACHE_CONTROL, "public, max-age=604800")
+            .body(body)
+            .map_err(|_| Error::NotFound)?;
+        Ok(response)
+    }
+}
+
+impl<T> IntoResponse for StaticFile<T>
+where
+    T: Into<String>,
+{
+    fn into_response(self) -> axum::response::Response {
+        self.maybe_response()
+            .unwrap_or(Error::NotFound.into_response())
+    }
 }
 
 #[derive(Debug)]
@@ -48,9 +102,14 @@ impl Context {
     fn render(&self, markup: Markup) -> Html {
         Ok(html! {
             (DOCTYPE)
-            html {
-                head {}
-                body {
+            html lang="en" {
+                head {
+                    title { "links" }
+                    meta name="viewport" content="width=device-width, initial-scale=1";
+                    meta charset="UTF-8";
+                    link rel="stylesheet" href="./pub/tailwind.css";
+                }
+                body class="bg-white dark:bg-gray-950 dark:text-white" {
                     (markup)
                 }
             }
@@ -79,7 +138,52 @@ impl<S> FromRequestParts<S> for Context {
 }
 
 async fn home(cx: Context) -> Html {
+    let links: Vec<Link> = vec![];
     cx.render(html! {
-        h1 { "hello world!" }
+        div class="max-w-lg mx-auto w-full lg:px-0 px-3 h-screen flex flex-col gap-3" {
+            h1 class="text-2xl lg:text-4xl text-center" { "links" }
+            div class="flex flex-col w-full gap-3" {
+                (text_input("url"))
+                (button("Add link"))
+                div class="w-full flex flex-col gap-4" {
+                    @for link in &links {
+                        (link_row(link))
+                    }
+                }
+            }
+        }
     })
+}
+
+fn spacer() -> Markup {
+    html! {
+        div class="flex flex-1" {}
+    }
+}
+
+fn text_input(name: &str) -> Markup {
+    html! {
+        input autofocus type="text" class="p-2 py-3 text-xl bg-white dark:bg-gray-600 rounded-md outline-none" name=(name) tabindex="1";
+    }
+}
+
+fn button(name: &str) -> Markup {
+    html! {
+        button type="submit" class="px-2 py-4 bg-orange-500 rounded-md hover:bg-orange-400" {
+            (name)
+        }
+    }
+}
+
+#[derive(Debug)]
+struct Link {
+    url: String,
+}
+
+fn link_row(link: &Link) -> Markup {
+    html! {
+        div class="" {
+            (link.url)
+        }
+    }
 }
